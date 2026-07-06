@@ -1,0 +1,28 @@
+# AvianVisitors round-panel kiosk autostart.
+#
+# Overrides Raspberry Pi Desktop's default /etc/xdg/labwc/autostart
+# (~/.config/labwc takes full priority over /etc/xdg/labwc, per the XDG
+# base directory spec labwc follows - this doesn't merge with it). Skips
+# pcmanfm-pi (desktop wallpaper/icons) and wf-panel-pi (taskbar) - both
+# would eat into the small usable area a round bezel already limits - and
+# launches Chromium in kiosk mode instead. lxsession-xdg-autostart is kept
+# so anything you drop in ~/.config/autostart/ still runs normally.
+#
+# lwrespawn (already shipped on Raspberry Pi OS, the same wrapper the
+# stock panel/wallpaper use) restarts Chromium if it ever crashes, for as
+# long as this labwc session is alive.
+#
+# URL is a plain shell variable, not an env var - labwc runs this script
+# directly with nothing upstream of it to export from. install.sh rewrites
+# this line if you pass --url.
+AV_KIOSK_URL="http://localhost/"
+
+/usr/bin/lxsession-xdg-autostart
+
+/usr/bin/lwrespawn chromium \
+  --kiosk --ozone-platform=wayland \
+  --incognito --noerrdialogs --disable-infobars \
+  --disable-session-crashed-bubble --disable-translate \
+  --overscroll-history-navigation=0 \
+  --check-for-update-interval=31536000 \
+  "$AV_KIOSK_URL" &

@@ -46,6 +46,20 @@
     font-family: ui-serif, "Iowan Old Style", "Apple Garamond", Georgia, serif;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
+    /* This is a tap-driven app, not a document - a touch-drag on text or
+       an image should scroll/swipe, never start a text selection or
+       trigger the iOS "save image" callout. Inputs opt back into normal
+       text selection below since typing still needs it. */
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  input, textarea {
+    -webkit-user-select: text; user-select: text;
+  }
+  button, a, .gtile, .bird-card, .seg-pill, [role="tablist"] button {
+    /* Removes the ~300ms tap delay on touch and skips the double-tap-zoom
+       gesture check, without disabling scroll on their scrollable ancestors. */
+    touch-action: manipulation;
   }
   .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.02em; }
 
@@ -1131,6 +1145,17 @@
     margin-top: 8px;
   }
   .admin-action.deploy button.copy:hover { color: var(--ink); }
+  .admin-action.danger { box-shadow: 0 0 0 1px var(--accent), var(--edge); }
+  .admin-action.danger h4 { color: var(--accent); }
+  .danger-confirm { display: flex; gap: 8px; margin-top: 4px; }
+  .danger-confirm input {
+    flex: 1; min-width: 0; background: var(--paper-2); border: 0;
+    border-radius: 6px; padding: 8px 10px; box-shadow: var(--recess);
+    font: 12px ui-monospace, Menlo, monospace; color: var(--ink);
+  }
+  .danger-confirm input::placeholder { color: var(--ink-soft); }
+  .danger-confirm input[disabled] { opacity: .6; }
+  .admin-action.danger button.run { flex: 0 0 auto; background: var(--accent); }
   .admin-unreachable {
     background: var(--paper); border-radius: 8px;
     padding: 14px 16px; color: var(--accent);
@@ -1247,8 +1272,13 @@
   #detail-modal.is-open { pointer-events: auto; opacity: 1; }
   .modal-backdrop {
     position: absolute; inset: 0;
-    background: rgba(26,22,18,0.32);
-    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    /* No backdrop-filter here on purpose: blurring everything behind the
+       modal has to be re-sampled every frame while #detail-modal's
+       opacity animates in/out, which is cheap on a desktop GPU but very
+       visibly janky on the Pi's - especially stacked on top of the
+       card's own transform morph. A plain scrim reads almost the same
+       and costs nothing to animate. */
+    background: rgba(26,22,18,0.4);
   }
   .modal-card {
     position: relative;
@@ -1590,3 +1620,48 @@
  * See avian/forwarding/. */
 body.av-local #dd-locked { display: none; }
 body.av-local #dd-items  { display: block; }
+
+/* ============ Round-panel (kiosk) mode ============
+ * Applied by apt.js's detectRound() when the viewport is ~1:1 at a decent
+ * size - true of a round HDMI touchscreen (e.g. the Waveshare 5"
+ * 1080x1080), never a phone or a normal desktop window. That panel is a
+ * square framebuffer physically masked by a circular bezel, so chrome
+ * pinned to the left/right screen edges (.top, #menu-dd) would render
+ * entirely behind the bezel. These rules pull it into a centered cluster
+ * that fits the visible circle instead. .static-head and .slider are
+ * already horizontally centered, so they only need vertical room. */
+.round-mode .static-head { padding: 148px 24px 10px; }
+.round-mode .top {
+  top: 76px; left: 50%; right: auto; transform: translateX(-50%);
+  justify-content: center; gap: 10px; padding: 0;
+}
+.round-mode .top .window-pick { padding: 3px; }
+.round-mode .top .window-pick button { font-size: 8px; padding: 5px 9px; letter-spacing: 0.08em; }
+.round-mode .menu-btn { font-size: 9px; padding: 6px 11px 5px; letter-spacing: 0.12em; }
+.round-mode .slider { bottom: 58px; }
+.round-mode #menu-dd {
+  top: 132px; left: 50%; right: auto;
+  width: min(560px, calc(100vw - 160px));
+  transform: translateX(-50%) translateY(-6px);
+}
+.round-mode #menu-dd.open { transform: translateX(-50%) translateY(0); }
+
+/* Idle-fade: after a few seconds of no touch, chrome disappears and only
+   the bare collage is left onscreen. This never advances the view - the
+   idle timer in apt.js only toggles body.chrome-idle. Mirrors the
+   existing body.admin-on fade pattern above. */
+.round-mode .top,
+.round-mode .slider,
+.round-mode .static-head {
+  transition: opacity 600ms ease;
+}
+.round-mode body.chrome-idle .top,
+.round-mode body.chrome-idle .slider,
+.round-mode body.chrome-idle .static-head {
+  opacity: 0;
+  pointer-events: none;
+}
+/* .top opts its children back into pointer-events (see base rule above)
+   so the empty space in the bar doesn't block clicks - undo that too
+   while idle, so a fully-faded button can't still be tapped. */
+.round-mode body.chrome-idle .top > * { pointer-events: none; }

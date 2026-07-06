@@ -76,14 +76,12 @@ create_necessary_dirs() {
   # php_fastcgi to prefer index.html over index.php at the root. The
   # stock BirdNET-Pi UI stays reachable at http://birdnet.local/index.php
   # for anyone who wants to drop into the legacy admin pages.
+  #
+  # Pulled into its own script (relink_avian.sh) because it also needs to
+  # run standalone after anything that rebuilds $EXTRACTED from scratch -
+  # see that file for why.
   if [ -d $my_dir/avian ]; then
-    sudo -u ${USER} ln -fs $my_dir/avian ${EXTRACTED}/avian
-    sudo -u ${USER} ln -fs $my_dir/avian/frontend/index.html ${EXTRACTED}/index.html
-    sudo -u ${USER} ln -fs $my_dir/avian/frontend/styles.css ${EXTRACTED}/styles.css
-    sudo -u ${USER} ln -fs $my_dir/avian/frontend/apt.js    ${EXTRACTED}/apt.js
-    sudo -u ${USER} ln -fs $my_dir/avian/frontend/masks.json ${EXTRACTED}/masks.json
-    sudo -u ${USER} ln -fs $my_dir/avian/frontend/dims.json  ${EXTRACTED}/dims.json
-    sudo -u ${USER} ln -fs $my_dir/avian/assets/favicon.png  ${EXTRACTED}/favicon.png
+    $my_dir/scripts/relink_avian.sh
   fi
   sudo -u ${USER} ln -fs $my_dir/model/labels.txt ${my_dir}/scripts
   sudo -u ${USER} ln -fs $my_dir/scripts ${EXTRACTED}
@@ -94,12 +92,11 @@ create_necessary_dirs() {
   sudo -u ${USER} ln -fs $my_dir/scripts/todays_detections.php ${EXTRACTED}
   sudo -u ${USER} ln -fs $my_dir/scripts/history.php ${EXTRACTED}
   sudo -u ${USER} ln -fs $my_dir/scripts/weekly_report.php ${EXTRACTED}
-  # favicon.ico -> AvianVisitors PNG when the overlay is present (modern
-  # browsers accept image/png for the .ico path); fall back to the stock
-  # BirdNET-Pi favicon.ico otherwise so plain installs still get an icon.
-  if [ -d $my_dir/avian ]; then
-    sudo -u ${USER} ln -fs $my_dir/avian/assets/favicon.png ${EXTRACTED}/favicon.ico
-  else
+  # favicon.ico: relink_avian.sh already pointed it at the AvianVisitors
+  # PNG above when the overlay is present (modern browsers accept
+  # image/png for the .ico path); fall back to the stock BirdNET-Pi
+  # favicon.ico otherwise so plain installs still get an icon.
+  if [ ! -d $my_dir/avian ]; then
     sudo -u ${USER} ln -fs $my_dir/homepage/images/favicon.ico ${EXTRACTED}
   fi
   sudo -u ${USER} ln -fs ${HOME}/phpsysinfo ${EXTRACTED}
@@ -367,8 +364,11 @@ configure_caddy_php() {
 caddy ALL=(ALL) NOPASSWD: ALL
 EOF
   chmod 0440 /etc/sudoers.d/010_caddy-nopasswd
-  # AvianVisitors admin overlay needs to restart whitelisted units and
-  # tail their journal. The 010 rule above already covers everything via
+  # AvianVisitors admin overlay needs to restart whitelisted units, tail
+  # their journal, and (tools panel, behind a typed confirmation) run
+  # clear_all_data.sh + relink_avian.sh (the latter re-links the overlay
+  # into place afterward - see relink_avian.sh for why). The 010 rule
+  # above already covers everything via
   # NOPASSWD: ALL - this 020 rule pins the exact commands we depend on
   # so the admin overlay stays working even if a future upstream change
   # tightens 010. See SECURITY.md for the longer story.
@@ -384,6 +384,8 @@ caddy ALL=(root) NOPASSWD: \\
     /bin/systemctl restart livestream, \\
     /bin/systemctl restart icecast2, \\
     /bin/systemctl restart caddy, \\
+    $my_dir/scripts/clear_all_data.sh, \\
+    $my_dir/scripts/relink_avian.sh, \\
     /bin/journalctl -u birdnet_recording *, \\
     /bin/journalctl -u birdnet_analysis *, \\
     /bin/journalctl -u birdnet_log *, \\

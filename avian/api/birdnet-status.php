@@ -8,6 +8,9 @@
 //   services  - status of every birdnet_* unit + caddy + php-fpm
 //   logs      - &unit=<name>&lines=N: last N lines of that unit's journal
 //   restart   - GET/POST &unit=<name>: restart a single service (whitelisted)
+//   clear_all_data - POST: wipe every recording + detection and start the
+//                    life list from zero (backgrounded; see clear_status)
+//   clear_status   - GET: is a clear_all_data.sh run still in progress?
 //   diag      - everything in one go (system + services + recent logs)
 //
 // Default LAN deploy: returns data immediately, no auth.
@@ -291,6 +294,58 @@ switch ($action) {
             'rc'   => $rc,
             'out'  => implode("\n", $out),
         ]);
+        break;
+    }
+
+    case 'clear_all_data': {
+        // POST-only, same passive-tag concern as 'restart' above - this
+        // one is far more destructive, so it's worth repeating.
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            http_response_code(405);
+            echo json_encode(['error' => 'POST required']);
+            break;
+        }
+        // clear_all_data.sh stops recording/analysis, deletes every
+        // recording + the whole detections DB, then recreates both and
+        // restarts services - it says up to ~90s itself. PHP-FPM's own
+        // request timeout is usually well under that, and we don't want
+        // this HTTP request to die mid-wipe with the DB half-recreated,
+        // so this kicks it off in the background and returns immediately;
+        // the frontend polls ?action=clear_status until it's done.
+        //
+        // "Still running?" is tracked with a lock file PHP itself writes
+        // and the background subshell removes, rather than pgrep - the
+        // shell PHP spawns just to run a pgrep check would itself have
+        // "clear_all_data.sh" in its own command line and match its own
+        // search.
+        $lock = sys_get_temp_dir() . '/avian-clear-all-data.lock';
+        if (is_file($lock)) {
+            echo json_encode(['ok' => true, 'already_running' => true]);
+            break;
+        }
+        touch($lock);
+        // Sudoers rule (dropped in by install_services.sh, 020_avian-admin):
+        //   caddy ALL=(root) NOPASSWD: .../scripts/clear_all_data.sh, .../scripts/relink_avian.sh
+        //
+        // clear_all_data.sh is pure upstream BirdNET-Pi: it rebuilds
+        // BirdSongs/Extracted (the Caddy webroot) from scratch knowing
+        // only about upstream's own symlinks, which silently drops the
+        // avian/ overlay and reverts the site to the stock BirdNET-Pi
+        // homepage. relink_avian.sh restores it - always run both.
+        $script = escapeshellarg("$BIRDNETPI_DIR/scripts/clear_all_data.sh");
+        $relink = escapeshellarg("$BIRDNETPI_DIR/scripts/relink_avian.sh");
+        $log = escapeshellarg(sys_get_temp_dir() . '/avian-clear-all-data.log');
+        $lockArg = escapeshellarg($lock);
+        // rm runs whether the scripts succeed or fail, so a crash can't
+        // wedge clear_status into reporting "running" forever.
+        exec("(sudo $script > $log 2>&1; sudo $relink >> $log 2>&1; rm -f $lockArg) &");
+        echo json_encode(['ok' => true, 'started' => true]);
+        break;
+    }
+
+    case 'clear_status': {
+        $lock = sys_get_temp_dir() . '/avian-clear-all-data.lock';
+        echo json_encode(['running' => is_file($lock)]);
         break;
     }
 

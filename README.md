@@ -94,15 +94,20 @@ avian/                  # everything we add to BirdNET-Pi
 ├── scripts/            # generate -> cutout -> masks pipeline + prompt
 └── forwarding/         # optional HA / MQTT / Cloudflare configs
 frame/                  # optional e-ink wall display
+kiosk/                  # optional round-touchscreen kiosk (same Pi as the mic)
 ```
 
-Everything outside `avian/` and `frame/` is upstream BirdNET-Pi.
+Everything outside `avian/`, `frame/`, and `kiosk/` is upstream BirdNET-Pi.
 
 ---
 
 ## Wall frame
 
 An optional e-ink frame mirrors the last 24h of birds onto a panel by your window. Build it from [`frame/`](frame/README.md). It can run off your own BirdNET mic, or standalone from BirdWeather data for any ZIP code with no mic at all.
+
+## Round-panel kiosk
+
+A round HDMI touchscreen wired to the same Pi as the mic boots straight into the live, touchable collage/stats/atlas UI - full nav, auto-repositioned to fit inside the round bezel, fading to just the collage after a few seconds idle. Build it from [`kiosk/`](kiosk/README.md).
 
 ---
 

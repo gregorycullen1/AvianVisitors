@@ -13,6 +13,19 @@
   var IMG_VERSION = 'r10'; // full library restyle: every species re-rendered
                            // with clean cutouts, so drop every cached copy.
 
+  // ---- Round-panel detection ----
+  // No phone or normal desktop window is ever ~1:1 at a decent size, so a
+  // near-square viewport reliably means we're on a round HDMI panel (e.g.
+  // the Waveshare 5" 1080x1080 kiosk display) where the physical bezel
+  // masks the square framebuffer's corners. Chrome that pins to screen
+  // edges (.top, .slider) needs to stay inside that circle instead -
+  // handled by .round-mode rules in styles.css.
+  function detectRound() {
+    var w = window.innerWidth, h = window.innerHeight;
+    return w >= 700 && (w / h) > 0.94 && (w / h) < 1.06;
+  }
+  document.documentElement.classList.toggle('round-mode', detectRound());
+
   // ---- Sliding pill helper ----
   // Each segmented control has a single .seg-pill element that we move via
   // transform/width to whichever button currently has aria-current="true".
@@ -414,6 +427,14 @@
     collage.innerHTML = '';
     if (!items.length) {
       collage.innerHTML = '<p class="empty">no birds heard in this window.</p>';
+      // maskHitTest() hit-tests taps against collagePlaced, not the DOM -
+      // without clearing it here, a tap can still "land" on a tile from
+      // the last time this window had birds (e.g. right after a data
+      // wipe) and pop the modal for a species no longer showing at all.
+      collagePlaced = [];
+      collageHovered = null;
+      var tip = document.getElementById('collageTip');
+      if (tip) tip.setAttribute('aria-hidden', 'true');
       return;
     }
     var W = collage.clientWidth, H = collage.clientHeight;
@@ -786,6 +807,7 @@
   window.addEventListener('resize', function () {
     clearTimeout(rTimer);
     rTimer = setTimeout(function () {
+      document.documentElement.classList.toggle('round-mode', detectRound());
       renderCollageFromData();
       drawHistograms();
     }, 120);
@@ -1414,6 +1436,38 @@
     }
   });
   startPolling();
+
+  // ---- Round-panel idle-fade ----
+  // On the round kiosk display, chrome (top bar, slider, title) fades out
+  // after a few seconds of no touch, leaving just the bird collage. Never
+  // auto-advances the view - this only toggles opacity via body.chrome-idle
+  // (see the .round-mode rules in styles.css). Paused while a modal or the
+  // menu dropdown is open so it can't vanish out from under the user.
+  if (document.documentElement.classList.contains('round-mode')) {
+    var IDLE_MS = 8000;
+    var idleTimer = null;
+    function overlaysOpen() {
+      return !!document.querySelector(
+        '#menu-dd.open, #detail-modal[aria-hidden="false"], #about-modal[aria-hidden="false"]'
+      );
+    }
+    function wakeChrome() {
+      document.body.classList.remove('chrome-idle');
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(function () {
+        if (!overlaysOpen()) document.body.classList.add('chrome-idle');
+      }, IDLE_MS);
+    }
+    // Capture phase: several existing handlers (e.g. the menu button,
+    // apt.js's liveBtn) call stopPropagation() on click to stop a
+    // document-level "click outside" handler from firing. Listening on
+    // capture means we see the event on the way down, before any of
+    // those bubble-phase stopPropagation() calls can hide it from us.
+    ['pointerdown', 'touchstart', 'click', 'keydown'].forEach(function (ev) {
+      document.addEventListener(ev, wakeChrome, { passive: true, capture: true });
+    });
+    wakeChrome();
+  }
 
   // ---- Menu dropdown ----
   var dd = document.getElementById('menu-dd');
@@ -2578,7 +2632,66 @@
         'cd ~/BirdNET-Pi && ./scripts/install_services.sh',
       ]);
     html += '</div>';
+    html += '<h2 class="admin-section-head">danger zone</h2>';
+    html += '<div class="admin-action danger">'
+      + '<h4>clear ALL data</h4>'
+      + '<p>deletes every recording and detection and resets the life list to zero. '
+      + 'cannot be undone. stops birdnet_recording/birdnet_analysis, wipes the database '
+      + 'and recordings, then restarts everything - takes up to ~90 seconds.</p>'
+      + '<div class="danger-confirm">'
+      + '<input type="text" id="clearAllConfirm" placeholder="type CLEAR to confirm" autocomplete="off" autocapitalize="off" spellcheck="false">'
+      + '<button class="run danger" type="button" id="clearAllBtn" disabled>clear all data</button>'
+      + '</div>'
+      + '<div class="out" id="clearAllOut"></div>'
+      + '</div>';
     adminBody.innerHTML = html;
+    // Wire the danger-zone clear-all-data flow: button stays disabled
+    // until the confirm input exactly matches "CLEAR", then a native
+    // confirm() as a last check before POSTing, then poll clear_status
+    // until the (backgrounded, ~90s) wipe finishes and reload the page.
+    var clearInput = document.getElementById('clearAllConfirm');
+    var clearBtn = document.getElementById('clearAllBtn');
+    var clearOut = document.getElementById('clearAllOut');
+    if (clearInput && clearBtn) {
+      clearInput.addEventListener('input', function () {
+        clearBtn.disabled = clearInput.value !== 'CLEAR';
+      });
+      clearBtn.addEventListener('click', function () {
+        if (!confirm('This permanently deletes every recording and detection. Continue?')) return;
+        clearInput.disabled = true; clearBtn.disabled = true;
+        clearBtn.textContent = 'clearing...';
+        if (clearOut) clearOut.textContent = 'stopping services and wiping data - this can take up to 90 seconds.';
+        fetch('./avian/api/birdnet-status.php?action=clear_all_data', {
+          method: 'POST', credentials: 'same-origin',
+        })
+          .then(function (r) { return r.json(); })
+          .catch(function () { return { error: 'request failed' }; })
+          .then(function () {
+            var elapsedMs = 0;
+            var pollMs = 3000;
+            var maxMs = 3 * 60 * 1000;
+            (function poll() {
+              fetch('./avian/api/birdnet-status.php?action=clear_status', { credentials: 'same-origin', cache: 'no-store' })
+                .then(function (r) { return r.json(); })
+                .then(function (j) {
+                  if (j && j.running) {
+                    elapsedMs += pollMs;
+                    if (elapsedMs >= maxMs) {
+                      if (clearOut) clearOut.textContent = 'still running after 3 minutes - check the Pi directly (journalctl, or ssh in).';
+                      return;
+                    }
+                    setTimeout(poll, pollMs);
+                    return;
+                  }
+                  clearBtn.textContent = 'done';
+                  if (clearOut) clearOut.textContent = 'data cleared. reloading...';
+                  setTimeout(function () { location.reload(); }, 1200);
+                })
+                .catch(function () { setTimeout(poll, pollMs); });
+            })();
+          });
+      });
+    }
     // Wire restart buttons + copy buttons.
     adminBody.querySelectorAll('.admin-action button.run').forEach(function (b) {
       b.addEventListener('click', function () {

@@ -42,6 +42,7 @@ $ALLOWED = [
     'LATITUDE'           => ['type' => 'float', 'min' => -90,  'max' => 90, 'restart' => true],
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
+    'RTSP_STREAM'        => ['type' => 'rtsp',   'maxlen' => 500, 'restart' => true],
 ];
 
 function read_conf(string $path): array {
@@ -102,6 +103,18 @@ function safe_string_value(string $v): bool {
     return (bool)preg_match("/^[A-Za-z0-9 _.,'-]*$/u", $v);
 }
 
+// Same defence-in-depth idea as safe_string_value, tailored to
+// RTSP_STREAM: empty (use the local mic) or one or more comma-separated
+// scheme://host/path URLs, matching what birdnet_recording.sh parses.
+// No query-string characters ($, &, ?, spaces, quotes) are allowed.
+function safe_rtsp_value(string $v): bool {
+    if ($v === '') return true;
+    return (bool)preg_match(
+        '#^[a-zA-Z][a-zA-Z0-9+.-]*://[A-Za-z0-9._:@/-]+(,[a-zA-Z][a-zA-Z0-9+.-]*://[A-Za-z0-9._:@/-]+)*$#',
+        $v
+    );
+}
+
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
@@ -152,6 +165,10 @@ if ($method === 'POST') {
             // reject anything outside a known-safe punctuation set so a
             // bash metacharacter can't get there even if quote_val regresses.
             if (!safe_string_value($v)) { $errors[$k] = 'invalid characters'; continue; }
+        } elseif ($spec['type'] === 'rtsp') {
+            $v = (string)$v;
+            if (strlen($v) > ($spec['maxlen'] ?? 500)) { $errors[$k] = 'too long'; continue; }
+            if (!safe_rtsp_value($v)) { $errors[$k] = 'invalid stream URL'; continue; }
         }
         $updates[$k] = $v;
     }

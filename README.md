@@ -95,9 +95,10 @@ avian/                  # everything we add to BirdNET-Pi
 └── forwarding/         # optional HA / MQTT / Cloudflare configs
 frame/                  # optional e-ink wall display
 kiosk/                  # optional round-touchscreen kiosk (same Pi as the mic)
+wireless-mic/           # optional wireless mic relay (a second, spare Pi)
 ```
 
-Everything outside `avian/`, `frame/`, and `kiosk/` is upstream BirdNET-Pi.
+Everything outside `avian/`, `frame/`, `kiosk/`, and `wireless-mic/` is upstream BirdNET-Pi.
 
 ---
 
@@ -108,6 +109,10 @@ An optional e-ink frame mirrors the last 24h of birds onto a panel by your windo
 ## Round-panel kiosk
 
 A round HDMI touchscreen wired to the same Pi as the mic boots straight into the live, touchable collage/stats/atlas UI - full nav, auto-repositioned to fit inside the round bezel, fading to just the collage after a few seconds idle. Build it from [`kiosk/`](kiosk/README.md).
+
+## Wireless mic
+
+The mic doesn't have to be plugged into the main Pi - a spare Pi can stream it over the LAN via RTSP instead, for setups where the mic needs to live somewhere the main Pi doesn't (or vice versa). Build it from [`wireless-mic/`](wireless-mic/README.md).
 
 ---
 

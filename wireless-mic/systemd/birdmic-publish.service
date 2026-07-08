@@ -1,0 +1,31 @@
+[Unit]
+Description=Publish USB mic audio to local mediamtx as RTSP
+After=mediamtx.service sound.target
+Requires=mediamtx.service
+# No rate limit on restarts: this loop is meant to retry forever (a
+# transient Wi-Fi hiccup or mediamtx not being up yet on boot are both
+# expected, self-healing conditions, not failures to give up on).
+StartLimitIntervalSec=0
+
+[Service]
+# install.sh rewrites User=, the paths, and __ALSA_DEVICE__ (from
+# `arecord -L`'s stable plughw:CARD=... name, not a hw:N card index,
+# which can shift across reboots) to match your install.
+#
+# pcm_s16be, not pcm_s16le: ffmpeg's rtsp muxer has a real bug where
+# publishing raw PCM in little-endian byte order produces an SDP mediamtx
+# rejects ("invalid SDP: media 1 is invalid: clock rate not found") -
+# big-endian (the RTP L16 standard byte order anyway) works fine. Raw PCM
+# over the lossy-compression alternative (e.g. Opus) because on a weak
+# single-core board it turned out CPU cost is dominated by ffmpeg's own
+# RTSP/network plumbing, not the codec - so there's no real CPU saving
+# from compressing, and PCM keeps the audio lossless for species-ID
+# accuracy. Bandwidth at 768kbps mono is trivial on a LAN.
+Type=simple
+User=monalisa
+ExecStart=/usr/bin/ffmpeg -nostdin -hide_banner -loglevel warning -f alsa -channels 1 -i __ALSA_DEVICE__ -ac 1 -acodec pcm_s16be -ar 48000 -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/birdmic
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

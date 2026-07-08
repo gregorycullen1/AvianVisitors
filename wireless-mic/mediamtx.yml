@@ -1,0 +1,27 @@
+# AvianVisitors wireless mic relay - minimal mediamtx config.
+# Only RTSP is needed; everything else mediamtx can do (RTMP, HLS,
+# WebRTC, SRT, MoQ, its HTTP API/metrics/pprof/playback) is switched off
+# to keep the footprint small on a weak/first-gen board.
+logLevel: info
+logDestinations: [stdout]
+
+rtsp: true
+rtspAddress: :8554
+# Both, not just tcp: BirdNET-Pi's birdnet_recording.sh doesn't specify a
+# transport when it pulls the stream, so the server has to accept
+# whatever ffmpeg's default negotiation picks.
+rtspTransports: [udp, multicast, tcp]
+
+rtmp: false
+hls: false
+webrtc: false
+srt: false
+moq: false
+api: false
+metrics: false
+pprof: false
+playback: false
+
+paths:
+  birdmic:
+    source: publisher

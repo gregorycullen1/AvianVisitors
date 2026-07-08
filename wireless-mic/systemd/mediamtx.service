@@ -1,0 +1,15 @@
+[Unit]
+Description=MediaMTX RTSP server (local relay for the bird mic)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# install.sh rewrites User= and the paths to match your install.
+Type=simple
+User=monalisa
+ExecStart=/usr/local/bin/mediamtx /usr/local/etc/mediamtx.yml
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -6,8 +6,10 @@
 // Endpoints:
 //   GET  -> returns current values as JSON.
 //   POST -> JSON body with any whitelisted key. Writes through to
-//           birdnet.conf and restarts birdnet_analysis + birdnet_recording
-//           so the changes take effect immediately.
+//           birdnet.conf, then restarts/starts whatever unit(s) each
+//           changed setting's 'restart' spec names (birdnet_analysis +
+//           birdnet_recording by default) so the change takes effect
+//           immediately.
 //
 // Default LAN deploy: returns data immediately, no auth.
 // Forwarded deploy:  set AV_REQUIRE_AUTH=1 (env) AND configure Caddy
@@ -43,6 +45,12 @@ $ALLOWED = [
     'LONGITUDE'          => ['type' => 'float', 'min' => -180, 'max' => 180, 'restart' => true],
     'SITE_NAME'          => ['type' => 'string', 'maxlen' => 60],
     'RTSP_STREAM'        => ['type' => 'rtsp',   'maxlen' => 500, 'restart' => true],
+    // Not a birdnet_analysis setting - the e-ink frame's own shoot.py reads
+    // this (via render_frame.sh) to decide how many hours of detections to
+    // draw. Reusing birdnet.conf/this whitelist for it avoids inventing a
+    // second config file + admin-panel plumbing for one integer.
+    'FRAME_WINDOW_HOURS' => ['type' => 'int',    'min' => 1, 'max' => 168,
+                              'restart' => ['unit' => 'birdframe-shoot', 'action' => 'start']],
 ];
 
 function read_conf(string $path): array {
@@ -189,19 +197,27 @@ if ($method === 'POST') {
         exit;
     }
 
-    // Restart services if any setting requires it.
-    $needsRestart = false;
+    // Restart/start services if any setting requires it. 'restart' => true
+    // means the usual birdnet_analysis + birdnet_recording pair; an array
+    // {unit, action} targets one specific unit with a specific systemctl
+    // verb instead (e.g. FRAME_WINDOW_HOURS "start"s the one-shot frame
+    // renderer rather than "restart"ing a long-running service).
+    $units = []; // unit => action
     foreach (array_keys($updates) as $k) {
-        if (!empty($ALLOWED[$k]['restart'])) { $needsRestart = true; break; }
+        $r = $ALLOWED[$k]['restart'] ?? null;
+        if ($r === true) {
+            $units['birdnet_analysis']  = 'restart';
+            $units['birdnet_recording'] = 'restart';
+        } elseif (is_array($r) && isset($r['unit'], $r['action'])) {
+            $units[$r['unit']] = $r['action'];
+        }
     }
     $restarted = [];
-    if ($needsRestart) {
-        foreach (['birdnet_analysis', 'birdnet_recording'] as $svc) {
-            // Pre-baked sudoers rule: caddy NOPASSWD: /bin/systemctl restart birdnet_*
-            $rc = 0; $out = [];
-            exec('sudo /bin/systemctl restart ' . escapeshellarg($svc) . ' 2>&1', $out, $rc);
-            $restarted[$svc] = $rc === 0;
-        }
+    foreach ($units as $svc => $action) {
+        // Pre-baked sudoers rule: caddy NOPASSWD: /bin/systemctl {restart,start} <these units>
+        $rc = 0; $out = [];
+        exec('sudo /bin/systemctl ' . escapeshellarg($action) . ' ' . escapeshellarg($svc) . ' 2>&1', $out, $rc);
+        $restarted[$svc] = $rc === 0;
     }
     echo json_encode(['ok' => true, 'updates' => $updates, 'restarted' => $restarted]);
     exit;

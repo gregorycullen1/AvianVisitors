@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install the AvianVisitors e-ink frame (display side) on a Raspberry Pi.
-# Enables SPI + I2C, installs deps, makes a venv, installs the systemd timer.
+# Enables SPI (+ I2C for Inky), installs deps, makes a venv, installs the
+# systemd timer.
 #
 # Three ways to feed the frame, pick one:
 #   ./install.sh                            mirror the BirdNET-Pi on your network
@@ -9,11 +10,18 @@
 #                                           (e.g. a public Cloudflare Worker)
 #   ./install.sh --bird-weather --zip <ZIP> standalone from BirdWeather, no mic
 #                                           (add --ebird-key <KEY> for remote ZIPs)
+#
+# Panel, independent of the above (default: Pimoroni Inky Impression 13.3"):
+#   --panel epd7in3e                        Waveshare RPi Zero PhotoPainter (800x480,
+#                                           6-colour). Used in its own enclosure, so
+#                                           this also sets layout = "fill" (cover the
+#                                           whole screen, no A5 mat opening).
 set -euo pipefail
 cd "$(dirname "$0")"
 FRAME="$(pwd)"
 
 MODE=local            # local | image | birdweather
+PANEL=""              # "" (Inky 13.3") | epd7in3e (Waveshare PhotoPainter)
 ZIP=""
 IMAGE_URL=""
 EBIRD_KEY=""
@@ -29,9 +37,17 @@ while [ $# -gt 0 ]; do
     --ebird-key) [ $# -ge 2 ] || { echo "--ebird-key needs a value (a free key from ebird.org/api/keygen)" >&2; exit 1; }
                  EBIRD_KEY="$2"; shift 2 ;;
     --ebird-key=*) EBIRD_KEY="${1#*=}"; shift ;;
+    --panel) [ $# -ge 2 ] || { echo "--panel needs a value, e.g. --panel epd7in3e" >&2; exit 1; }
+             PANEL="$2"; shift 2 ;;
+    --panel=*) PANEL="${1#*=}"; shift ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
+
+if [ -n "$PANEL" ] && [ "$PANEL" != "epd7in3e" ]; then
+  echo "--panel only recognises epd7in3e (leave unset for the default Inky 13.3\")" >&2
+  exit 1
+fi
 
 if [ -n "$ZIP" ] && [ "$MODE" != birdweather ]; then
   echo "--zip only applies with --bird-weather" >&2
@@ -81,10 +97,15 @@ if [ "$MODE" = image ]; then NEEDS_BROWSER=0; fi
 CONFIG_TXT=/boot/firmware/config.txt
 [ -f "$CONFIG_TXT" ] || CONFIG_TXT=/boot/config.txt
 
-echo "1/5  Enabling SPI + I2C (Inky needs both; SPI with no chip-select)..."
-sudo raspi-config nonint do_spi 0
-sudo raspi-config nonint do_i2c 0
-grep -q "^dtoverlay=spi0-0cs" "$CONFIG_TXT" || echo "dtoverlay=spi0-0cs" | sudo tee -a "$CONFIG_TXT" >/dev/null
+if [ "$PANEL" = epd7in3e ]; then
+  echo "1/5  Enabling SPI (the PhotoPainter drives CS itself in hardware, no overlay needed)..."
+  sudo raspi-config nonint do_spi 0
+else
+  echo "1/5  Enabling SPI + I2C (Inky needs both; SPI with no chip-select)..."
+  sudo raspi-config nonint do_spi 0
+  sudo raspi-config nonint do_i2c 0
+  grep -q "^dtoverlay=spi0-0cs" "$CONFIG_TXT" || echo "dtoverlay=spi0-0cs" | sudo tee -a "$CONFIG_TXT" >/dev/null
+fi
 
 echo "2/5  Installing system packages (build tools to compile spidev, libatlas3-base for numpy)..."
 sudo apt-get update -qq
@@ -94,6 +115,11 @@ echo "3/5  Creating venv and installing Python deps..."
 python3 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements-frame.txt
+if [ "$PANEL" = epd7in3e ]; then
+  .venv/bin/pip install -q spidev gpiozero
+else
+  .venv/bin/pip install -q "inky>=2.1,<3"
+fi
 if [ "$NEEDS_BROWSER" = 1 ]; then
   echo "     Installing Playwright + Chromium so the Pi can render the collage (a few minutes)..."
   .venv/bin/pip install -q playwright
@@ -128,6 +154,10 @@ timeout = 45
 # basic_user = "..."
 # basic_pass = "..."
 CFG
+  if [ "$PANEL" = epd7in3e ]; then
+    { printf '%s\n' 'panel = "epd7in3e"  # Waveshare RPi Zero PhotoPainter'
+      printf '%s\n' 'layout = "fill"     # its own enclosure, no A5 mat opening'; } >> "$CONFIG"
+  fi
 elif [ "$MODE" = image ]; then
   BASE="$(printf '%s' "$IMAGE_URL" | sed -E 's#^(https?://[^/]+).*#\1#')"
   # printf, not a heredoc: the URL is written literally, never shell-expanded.
@@ -140,6 +170,10 @@ elif [ "$MODE" = image ]; then
     printf '%s\n' 'rotate = 90          # flip to 270 if the frame hangs the other way up'
     printf '%s\n' 'saturation = 0.6'
   } > "$CONFIG"
+  if [ "$PANEL" = epd7in3e ]; then
+    { printf '%s\n' 'panel = "epd7in3e"  # Waveshare RPi Zero PhotoPainter'
+      printf '%s\n' 'layout = "fill"     # its own enclosure, no A5 mat opening'; } >> "$CONFIG"
+  fi
 else
   # birdweather: this Pi renders from BirdWeather near $ZIP, gated on the same
   # signature as the other modes - it only redraws when the local top birds change.
@@ -156,19 +190,34 @@ else
     printf '%s\n' 'rotate = 90          # flip to 270 if the frame hangs the other way up'
     printf '%s\n' 'saturation = 0.6'
   } > "$CONFIG"
+  if [ "$PANEL" = epd7in3e ]; then
+    { printf '%s\n' 'panel = "epd7in3e"  # Waveshare RPi Zero PhotoPainter'
+      printf '%s\n' 'layout = "fill"     # its own enclosure, no A5 mat opening'; } >> "$CONFIG"
+  fi
 fi
 
 echo "5/5  Installing systemd service + timer..."
-# Every mode runs display.py against the config on the standard 15-minute timer;
-# only the config differs. display.py renders inline for local + birdweather and
-# pushes to the panel only when the birds change.
+# Every mode runs display.py against the config on a timer; only the config
+# (and, below, the interval) differs. display.py renders inline for local +
+# birdweather and pushes to the panel only when the birds change.
 sed "s|/home/monalisa/AvianVisitors/frame|$FRAME|g; s|/home/monalisa|$HOME|g; s|User=monalisa|User=$USER|" \
   systemd/birdframe.service | sudo tee /etc/systemd/system/birdframe.service >/dev/null
 # BirdWeather's remote-ZIP eBird fallback reads its key from the unit environment.
 if [ "$MODE" = birdweather ] && [ -n "$EBIRD_KEY" ]; then
   echo "Environment=EBIRD_API_KEY=$EBIRD_KEY" | sudo tee -a /etc/systemd/system/birdframe.service >/dev/null
 fi
-sudo cp systemd/birdframe.timer /etc/systemd/system/birdframe.timer
+if [ "$MODE" = image ]; then
+  # image mode's check is a HEAD request against image_url (see
+  # is_image_mode()/image_change_token() in display.py) - a lot cheaper
+  # than local/birdweather's full in-process render, so it can poll far
+  # more often without meaningfully more load, for much better latency
+  # between a source update (e.g. a re-render triggered elsewhere) and
+  # this panel picking it up.
+  sed "s|OnUnitActiveSec=15min|OnUnitActiveSec=2min|" systemd/birdframe.timer \
+    | sudo tee /etc/systemd/system/birdframe.timer >/dev/null
+else
+  sudo cp systemd/birdframe.timer /etc/systemd/system/birdframe.timer
+fi
 sudo systemctl daemon-reload
 sudo systemctl enable --now birdframe.timer  # --now starts it immediately, not only on the next boot
 
@@ -217,6 +266,13 @@ FLAG
     fi
     ;;
 esac
+
+if [ "$PANEL" = epd7in3e ]; then
+  cat <<DONE
+Panel: Waveshare RPi Zero PhotoPainter (epd7in3e), layout = fill (edge-to-edge,
+no A5 mat opening - that's for the wood-frame Inky build).
+DONE
+fi
 
 # SPI only takes effect on a reboot, so do it for the user. Skip if SPI is
 # already up (e.g. a re-run) so we don't bounce a working frame.

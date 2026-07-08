@@ -1761,6 +1761,13 @@
               { v: 'purge', label: 'purge' },
             ])
           + settingsText('RTSP_STREAM', 'Audio source', 'RTSP stream URL - blank uses the local mic', v.RTSP_STREAM, 'rtsp://host:8554/stream')
+          + settingsSegmented('FRAME_WINDOW_HOURS', 'E-ink frame window', 'birds shown on the wall frame', v.FRAME_WINDOW_HOURS, [
+              { v: 1,  label: '1h' },
+              { v: 3,  label: '3h' },
+              { v: 6,  label: '6h' },
+              { v: 12, label: '12h' },
+              { v: 24, label: '24h' },
+            ])
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
           + '  <button type="button" id="saveBtn" disabled>save</button>'
@@ -2424,6 +2431,13 @@
               { v: 'purge', label: 'purge' },
             ])
           + settingsText('RTSP_STREAM', 'Audio source', 'RTSP stream URL - blank uses the local mic', v.RTSP_STREAM, 'rtsp://host:8554/stream')
+          + settingsSegmented('FRAME_WINDOW_HOURS', 'E-ink frame window', 'birds shown on the wall frame', v.FRAME_WINDOW_HOURS, [
+              { v: 1,  label: '1h' },
+              { v: 3,  label: '3h' },
+              { v: 6,  label: '6h' },
+              { v: 12, label: '12h' },
+              { v: 24, label: '24h' },
+            ])
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
           + '  <button type="button" id="saveBtn" disabled>save</button>'

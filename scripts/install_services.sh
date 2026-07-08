@@ -384,6 +384,7 @@ caddy ALL=(root) NOPASSWD: \\
     /bin/systemctl restart livestream, \\
     /bin/systemctl restart icecast2, \\
     /bin/systemctl restart caddy, \\
+    /bin/systemctl start birdframe-shoot, \\
     $my_dir/scripts/clear_all_data.sh, \\
     $my_dir/scripts/relink_avian.sh, \\
     /bin/journalctl -u birdnet_recording *, \\
@@ -393,7 +394,8 @@ caddy ALL=(root) NOPASSWD: \\
     /bin/journalctl -u spectrogram_viewer *, \\
     /bin/journalctl -u livestream *, \\
     /bin/journalctl -u icecast2 *, \\
-    /bin/journalctl -u caddy *
+    /bin/journalctl -u caddy *, \\
+    /bin/journalctl -u birdframe-shoot *
 EOF
     chmod 0440 /etc/sudoers.d/020_avian-admin
     visudo -c -f /etc/sudoers.d/020_avian-admin >/dev/null

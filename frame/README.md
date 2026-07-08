@@ -65,6 +65,8 @@ Pick how the frame gets its birds:
 
 Each one enables SPI + I2C, installs the deps and a systemd timer, writes `~/.birdframe/config.toml`, and reboots once to bring SPI up. Full options live in [`config.example.toml`](config.example.toml).
 
+Add `--panel epd7in3e` to any of the above for a [Waveshare RPi Zero PhotoPainter](https://www.waveshare.com/wiki/RPi_Zero_PhotoPainter) (800×480, 6-colour) instead of the Inky 13.3" - it's used in its own enclosure rather than a separate wood frame, so the collage fills the whole screen edge-to-edge instead of floating in an A5 mat opening. Its driver is vendored in [`waveshare_epd/`](waveshare_epd/) (Waveshare doesn't publish it as a pip package).
+
 BirdWeather mode renders on the Pi from this repo's illustrations on GitHub, so there is no image set to copy over. ZIP codes with no station nearby fall back to the closest ones. If you are far from any BirdWeather station, add `--ebird-key <key>` (a free key from [ebird.org/api/keygen](https://ebird.org/api/keygen)) and the frame fills from eBird sightings instead.
 
 The bundled illustrations center on the western U.S. If birds near your ZIP aren't in the set you cloned, the installer flags them and the frame skips them until they exist. To generate them, run [`generate_illustrations.py`](generate_illustrations.py) on a laptop or workstation (it uses the same rembg cutout as the rest of the pipeline, which the Pi can't fit in memory), passing your ZIP and a paid Google Gemini key, then commit the new cutouts or copy them to the Pi:
@@ -74,3 +76,15 @@ python3 generate_illustrations.py --zip 10001 --gemini-key YOUR_GEMINI_KEY
 ```
 
 It generates only the species you're missing; `--country` and `--sample` carry through for non-US postcodes or a wider region.
+
+---
+
+### Split install: a weak Pi (e.g. a Zero W) driving the panel, a stronger one rendering
+
+`shoot.py` needs a real headless browser and won't run on a Pi Zero W (see its own docstring). If your display Pi is that weak, keep it in `--image-url` mode fetching from a separate, stronger, always-on machine that runs the rendering instead - typically the same Pi that already runs BirdNET-Pi:
+
+1. On the stronger Pi: clone this repo (or copy `frame/`), `python3 -m venv .venv-shoot && .venv-shoot/bin/pip install -r requirements-shoot.txt && .venv-shoot/bin/playwright install-deps chromium && .venv-shoot/bin/playwright install chromium`.
+2. Edit [`render_frame.sh`](render_frame.sh)'s `shoot.py` flags to taste (title/subtitle, size, layout tuning), then install [`systemd/birdframe-shoot.service`](systemd/birdframe-shoot.service) + [`.timer`](systemd/birdframe-shoot.timer) (adjust `User=`/paths first) so it renders on the same 15-minute cadence, writing straight into a path Caddy already serves (e.g. BirdNET-Pi's own `Extracted/` dir needs no Caddy config changes at all).
+3. On the display Pi: `./install.sh --image-url http://<stronger-pi>.local/frame.png [--panel epd7in3e]`.
+
+`render_frame.sh` reads `FRAME_WINDOW_HOURS` from `birdnet.conf` if present (falls back to 24) - on an AvianVisitors install this is whitelisted in [`avian/api/config.php`](../avian/api/config.php), so it's adjustable from the admin panel's Settings without SSH.

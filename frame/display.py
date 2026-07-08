@@ -31,12 +31,30 @@ try:
 except ModuleNotFoundError:  # Python < 3.11
     import tomli as tomllib
 
-PANEL_W, PANEL_H = 1200, 1600  # portrait; the panel itself is 1600x1200
+# Per-panel working canvas size. "" / "el133uf1": Inky Impression 13.3",
+# portrait canvas (the panel itself is 1600x1200 landscape, rotated at push
+# time). "epd7in3e": Waveshare PhotoPainter - its outer housing is portrait
+# (154x214mm) even though the display glass inside is native-landscape
+# (800x480px), the same as the panel is mounted rotated inside a portrait
+# housing; compose portrait here and rotate at push time, same pattern as
+# the 13.3".
+PANEL_SIZES = {
+    "": (1200, 1600),
+    "el133uf1": (1200, 1600),
+    "epd7in3e": (480, 800),
+}
+PANEL_W, PANEL_H = PANEL_SIZES[""]  # reset per-run in run(), from cfg["panel"]
 
-# Approximate Spectra-6 inks, used only for --preview. On hardware the Inky
-# library maps to the panel's real palette.
+# Approximate ink palettes, used only for --preview. On hardware each
+# library/driver maps to the panel's real palette.
 SPECTRA6 = [(236, 234, 223), (26, 26, 28), (165, 60, 56),
             (198, 176, 74), (49, 71, 130), (58, 110, 72)]
+# Black, White, Yellow, Red, Blue, Green - matches epd7in3e.py's own palette
+# order exactly (its 5th slot duplicates Black as an unused ORANGE placeholder;
+# this panel has no orange).
+WAVESHARE6 = [(0, 0, 0), (255, 255, 255), (255, 255, 0),
+              (255, 0, 0), (0, 0, 255), (0, 255, 0)]
+PREVIEW_PALETTES = {"": SPECTRA6, "el133uf1": SPECTRA6, "epd7in3e": WAVESHARE6}
 
 DEFAULTS = {
     "base_url": "http://birdnet.local",
@@ -52,6 +70,8 @@ DEFAULTS = {
     "shoot_headline_px": 42, "shoot_eyebrow_px": 18, "shoot_lowercase": False,
     "shoot_mat": 0.04, "shoot_small_floor": 0.04, "shoot_count_exp": 0.65,
     "mat": 0.0,             # extra global shrink of the content inside the A5 opening
+    "layout": "mat",        # "mat" = float in an A5 opening (wood-frame builds);
+                            # "fill" = cover the whole panel (e.g. the PhotoPainter's own enclosure)
     "rotate": 90,           # 90 or 270 if the frame hangs the other way up
     "saturation": 0.6,
     "panel": "",            # "el133uf1" forces the 13.3" driver if auto() fails
@@ -107,6 +127,56 @@ def fetch_species(cfg, auth=None):
     return fetch_recent(cfg["base_url"], cfg["hours"], cfg["timeout"], auth)
 
 
+def is_image_mode(cfg):
+    """True when the actual panel content comes from a pre-rendered image
+    (image_url / image, e.g. a shoot.py running elsewhere) rather than
+    this process rendering it (shoot = true) or drawing from BirdWeather
+    data directly. In this mode the species/hours signature below reflects
+    whatever window *this* config happens to have (often just its 24h
+    default) - not necessarily the window the image was actually rendered
+    with (e.g. a separately-configured --window-hours upstream) - so it's
+    not a reliable change-detector for what we're about to display."""
+    return (cfg.get("species_source") != "birdweather" and not cfg.get("shoot")
+            and bool(cfg.get("image_url") or cfg.get("image")))
+
+
+def image_change_signal(src, timeout, auth=None):
+    """The 'has the image we're about to display actually meaningfully
+    changed' signal for image mode.
+
+    Tries a sidecar signature file first - the convention render_frame.sh
+    publishes: <image>.sig next to <image>.png, containing the species
+    signature computed from the SAME underlying data and window the
+    renderer actually used. This is the only reliable signal: an HTTP
+    ETag/Last-Modified or a pixel hash of the rendered image both falsely
+    report "changed" on every single render even with byte-for-byte
+    identical species data, because the site re-rolls small cosmetic
+    randomness (e.g. a bird's perched-vs-flight pose) on every fresh page
+    load, which shoot.py always is.
+
+    Falls back to an HTTP conditional-request token (ETag/Last-Modified)
+    for an image source with no sidecar published (e.g. some other
+    image_url entirely, not a render_frame.sh instance) - a strictly
+    weaker signal (refreshes somewhat more often than truly necessary),
+    but still reacts to the feed changing at all."""
+    if re.match(r"^https?://", src):
+        sig_url = re.sub(r"\.png(\?.*)?$", ".sig", src)
+        try:
+            req = urllib.request.Request(sig_url, headers={"User-Agent": "AvianVisitors-frame/1.0"})
+            if auth:
+                req.add_header("Authorization", auth)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return "sig:" + r.read(200).decode("utf-8", "replace").strip()
+        except (urllib.error.HTTPError, urllib.error.URLError):
+            pass  # no sidecar published for this source; fall back to ETag
+        req = urllib.request.Request(src, method="HEAD", headers={"User-Agent": "AvianVisitors-frame/1.0"})
+        if auth:
+            req.add_header("Authorization", auth)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return "etag:" + (r.headers.get("ETag") or r.headers.get("Last-Modified") or "")
+    return "mtime:" + str(os.path.getmtime(os.path.expanduser(src)))
+
+
 # --- image ------------------------------------------------------------------
 def get_image(src, timeout, auth=None):
     if re.match(r"^https?://", src):
@@ -124,6 +194,19 @@ def fit_panel(img):
     return img
 
 
+def fill_panel(img):
+    """Cover-fit: scale to fill the panel exactly, centre-cropping any
+    overflow, preserving aspect ratio (unlike fit_panel's naive stretch).
+    For layout = "fill" - a panel used in its own enclosure, with no
+    separate wood-frame mat opening to float content inside."""
+    img = img.convert("RGB")
+    s = max(PANEL_W / img.width, PANEL_H / img.height)
+    nw, nh = max(1, round(img.width * s)), max(1, round(img.height * s))
+    img = img.resize((nw, nh), Image.LANCZOS)
+    x0, y0 = (nw - PANEL_W) // 2, (nh - PANEL_H) // 2
+    return img.crop((x0, y0, x0 + PANEL_W, y0 + PANEL_H))
+
+
 def _paper(img):
     """Median of the four corners, robust to a stray inked corner."""
     w, h = img.size
@@ -132,7 +215,9 @@ def _paper(img):
 
 
 # The mat opening is an A5 rectangle (1 : sqrt(2)) centred in the panel; the
-# content floats inside it with `mat` of inner whitespace.
+# content floats inside it with `mat` of inner whitespace. Recomputed
+# alongside PANEL_W/PANEL_H in run() (layout = "mat" only), not just set once
+# at import time, so a non-default panel size doesn't leave these stale.
 A5_H = PANEL_H * 0.7071           # A5 is 1/sqrt(2) of the panel height
 A5_W = A5_H / 1.41421             # A5 aspect 1 : sqrt(2)
 
@@ -250,10 +335,10 @@ def mat_and_center(img, mat, empty=False):
     return canvas
 
 
-def quantize_spectra6(img):
+def quantize_preview(img, palette):
     pal = Image.new("P", (1, 1))
-    flat = [c for ink in SPECTRA6 for c in ink]
-    flat += list(SPECTRA6[0]) * ((768 - len(flat)) // 3)  # pad the 256-entry palette with paper
+    flat = [c for ink in palette for c in ink]
+    flat += list(palette[0]) * ((768 - len(flat)) // 3)  # pad the 256-entry palette with paper
     pal.putpalette(flat[:768])
     return img.convert("RGB").quantize(palette=pal, dither=Image.Dither.FLOYDSTEINBERG).convert("RGB")
 
@@ -266,12 +351,41 @@ def _draw_mat_box(img):
 
 
 # --- hardware ---------------------------------------------------------------
+def _snap_near_white(img, threshold=210):
+    """Snap near-white pixels to pure (255,255,255).
+
+    epd7in3e's palette has no dedicated off-white/cream ink - only pure
+    white - so the site's actual (slightly cream) paper colour otherwise
+    gets Floyd-Steinberg dithered against white across the *entire* flat
+    background, scattering visible speckle everywhere. A real bird
+    illustration's colours have at least one channel well below this
+    threshold, so they're untouched; only the flat paper area is affected.
+    """
+    lut = [255 if v >= threshold else v for v in range(256)]
+    return img.point(lut * 3)
+
+
 def push_panel(img, rotate, saturation, panel=""):
-    """Rotate to the panel's landscape buffer and push. Lazy import so this
-    module still loads on a machine without the Inky library."""
+    """Push to the panel. Lazy imports so this module still loads on a
+    machine without the panel's driver library installed."""
     if rotate not in (90, 270):
         print(f"rotate must be 90 or 270, not {rotate}; using 90", file=sys.stderr)
         rotate = 90
+    if panel == "epd7in3e":
+        # Composed portrait (see PANEL_SIZES); rotate to the panel's native
+        # landscape buffer ourselves so we control the direction explicitly,
+        # rather than relying on getbuffer()'s own dimension-swap-triggered
+        # auto-rotate (which is hardcoded to one direction only).
+        from waveshare_epd import epd7in3e
+        buf = img.rotate(rotate, expand=True)
+        if buf.size != (epd7in3e.EPD_WIDTH, epd7in3e.EPD_HEIGHT):
+            buf = buf.resize((epd7in3e.EPD_WIDTH, epd7in3e.EPD_HEIGHT), Image.LANCZOS)
+        buf = _snap_near_white(buf)
+        dev = epd7in3e.EPD()
+        dev.init()
+        dev.display(dev.getbuffer(buf))
+        dev.sleep()
+        return
     if panel == "el133uf1":
         from inky.inky_el133uf1 import Inky
         dev = Inky(resolution=(1600, 1200))
@@ -341,6 +455,11 @@ def obtain_image(cfg, species=None):
 
 
 def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
+    global PANEL_W, PANEL_H, A5_H, A5_W
+    PANEL_W, PANEL_H = PANEL_SIZES.get(cfg.get("panel", ""), PANEL_SIZES[""])
+    A5_H = PANEL_H * 0.7071
+    A5_W = A5_H / 1.41421
+
     now = time.time()
     state = load_state(cfg["state"])
     sig = None
@@ -351,6 +470,16 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
             sig = signature(species)
         except Exception as e:
             print(f"signature fetch failed: {e}", file=sys.stderr)  # treat as no change
+        if is_image_mode(cfg):
+            # Overrides the species-derived sig above with one tied to the
+            # actual image we'd fetch - see is_image_mode()'s docstring for
+            # why the species signature alone isn't reliable here. Species
+            # is still fetched above (best-effort) purely for the "no birds
+            # yet" empty-state layout below.
+            try:
+                sig = image_change_signal(cfg["image_url"] or cfg["image"], cfg["timeout"], _auth(cfg))
+            except Exception as e:
+                print(f"image change-signal fetch failed: {e}", file=sys.stderr)
     heal_due = now - state.get("last_refresh", 0) >= cfg["heal_hours"] * 3600
     changed = (not use_signature) or (sig is not None and sig != state.get("signature"))
     if not force and not preview:
@@ -363,13 +492,17 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
         print("refresh:", "changed" if changed else "heal")
 
     try:
-        img = fit_panel(obtain_image(cfg, species))
+        img = obtain_image(cfg, species)
     except Exception as e:
         print(f"could not get image: {e}", file=sys.stderr)  # keep last panel image
         return
-    img = mat_and_center(img, cfg["mat"], empty=(species == []))
+    if cfg.get("layout") == "fill":
+        img = fill_panel(img)
+    else:
+        img = mat_and_center(fit_panel(img), cfg["mat"], empty=(species == []))
     if preview:
-        out = quantize_spectra6(img)
+        pre = _snap_near_white(img) if cfg.get("panel") == "epd7in3e" else img
+        out = quantize_preview(pre, PREVIEW_PALETTES.get(cfg.get("panel", ""), SPECTRA6))
         if mat_box:
             _draw_mat_box(out)
         out.save(preview)

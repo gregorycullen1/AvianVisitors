@@ -1,0 +1,14 @@
+[Unit]
+Description=Render the AvianVisitors collage for the e-ink frame (shoot.py)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# Adjust User=/paths to match your install if setting this up by hand.
+Type=oneshot
+User=monalisa
+WorkingDirectory=/home/monalisa/AvianVisitors-frame
+ExecStart=/home/monalisa/AvianVisitors-frame/render_frame.sh
+Environment=PYTHONUNBUFFERED=1
+Nice=10
+TimeoutStartSec=120

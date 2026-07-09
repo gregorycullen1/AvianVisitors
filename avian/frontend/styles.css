@@ -1656,6 +1656,54 @@ body.av-local #dd-items  { display: block; }
 }
 .round-mode #menu-dd.open { transform: translateX(-50%) translateY(0); }
 
+/* eBird sends X-Frame-Options: DENY and now redirects anonymous/incognito
+   requests straight to a Cornell login wall before showing any species
+   page - it can't be embedded and is already a dead link on this kiosk's
+   --incognito session, so it's hidden here rather than left as a trap.
+   Desktop/normal-aspect keeps it since a real browser tab can log in. */
+.round-mode [data-ext="ebird"] { display: none; }
+
+/* Wikipedia reader overlay: round-mode has no tabs/address bar/back
+ * gesture, so a target="_blank" wiki link is a dead end (apt.js's
+ * click handler on a[data-ext="wiki"] intercepts it and opens this
+ * instead). Full-bleed rectangular iframe rather than a bezel-safe
+ * centered square - Wikipedia is scrollable text the user pans through,
+ * so corners sitting behind the physical bezel are an acceptable trade
+ * for maximizing usable reading area, same as full-framebuffer photos
+ * elsewhere in round-mode. */
+#wiki-overlay {
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none; opacity: 0;
+  transition: opacity 220ms ease;
+}
+#wiki-overlay[aria-hidden="false"] { pointer-events: auto; opacity: 1; }
+.wiki-overlay-frame { position: relative; width: 100%; height: 100%; }
+#wikiFrame {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  border: 0; background: var(--paper);
+}
+.wiki-overlay-bar {
+  position: absolute; bottom: 54px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 8px; z-index: 1;
+  /* Deliberately not in the body.chrome-idle fade list below - these
+     controls must stay reachable at all times while reading. */
+}
+.wiki-overlay-bar .chip {
+  flex: 0 0 auto;
+  background: var(--paper-2);
+  border: 0; color: var(--ink);
+  padding: 7px 12px;
+  border-radius: 4px;
+  font: 10px/1 ui-monospace, Menlo, monospace;
+  text-transform: lowercase; letter-spacing: 0.12em;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
+  box-shadow: var(--raised);
+  transition: transform 160ms ease;
+}
+.wiki-overlay-bar .chip:hover { transform: translateY(-1px); }
+
 /* Idle-fade: after a few seconds of no touch, chrome disappears and only
    the bare collage is left onscreen. This never advances the view - the
    idle timer in apt.js only toggles body.chrome-idle. Mirrors the

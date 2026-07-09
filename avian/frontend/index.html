@@ -177,8 +177,8 @@
       </ol>
     </div>
     <div class="modal-actions">
-      <a id="modalWiki" class="chip ext" target="_blank" rel="noopener">wiki</a>
-      <a id="modalEbird" class="chip ext" target="_blank" rel="noopener">ebird</a>
+      <a id="modalWiki" class="chip ext" data-ext="wiki" target="_blank" rel="noopener">wiki</a>
+      <a id="modalEbird" class="chip ext" data-ext="ebird" target="_blank" rel="noopener">ebird</a>
     </div>
   </article>
 </div>
@@ -192,6 +192,19 @@
     <p class="about-body">A tiny microphone identifies every passing bird with Cornell's <a href="https://birdnet.cornell.edu/" target="_blank" rel="noopener">BirdNET</a>. Each species shows up as an illustration in the collage, sized by how often it's been heard.</p>
     <button type="button" class="about-explore" data-close="1">explore the birds →</button>
     </div>
+</div>
+
+<div id="wiki-overlay" aria-hidden="true" role="dialog" aria-label="Wikipedia article">
+  <div class="modal-backdrop" data-close="1"></div>
+  <div class="wiki-overlay-frame">
+    <iframe id="wikiFrame" src="about:blank" title="Wikipedia article"
+      sandbox="allow-scripts allow-same-origin allow-forms"
+      referrerpolicy="no-referrer"></iframe>
+    <div class="wiki-overlay-bar">
+      <button type="button" class="chip wiki-back" id="wikiBackBtn" aria-label="back">&larr; back</button>
+      <button type="button" class="chip wiki-close" data-close="1" aria-label="close">&times; dashboard</button>
+    </div>
+  </div>
 </div>
 
 <nav class="slider" id="slider" aria-label="View">

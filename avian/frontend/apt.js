@@ -1112,6 +1112,21 @@
     return code ? 'https://ebird.org/species/' + code : 'https://ebird.org/explore';
   }
 
+  // Round-mode kiosk has no tabs/address bar/back-gesture, so a
+  // target="_blank" wiki link is a dead end - read the article in an
+  // in-app overlay instead. (eBird can't get the same treatment: it sends
+  // X-Frame-Options: DENY and redirects anonymous/incognito sessions
+  // straight to a Cornell login wall, so it's hidden in round-mode - see
+  // styles.css.)
+  function openWikiOverlay(sci) {
+    document.getElementById('wikiFrame').src = wikiUrl(sci);
+    document.getElementById('wiki-overlay').setAttribute('aria-hidden', 'false');
+  }
+  function closeWikiOverlay() {
+    document.getElementById('wiki-overlay').setAttribute('aria-hidden', 'true');
+    document.getElementById('wikiFrame').src = 'about:blank';
+  }
+
   // Tiny inline icons - monochrome, ink-only, match the page palette.
   var ICON_PLAY = '<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2 L10 6 L3 10 Z"/></svg>';
   var ICON_PAUSE = '<svg viewBox="0 0 12 12" fill="currentColor"><rect x="3" y="2" width="2.5" height="8"/><rect x="6.5" y="2" width="2.5" height="8"/></svg>';
@@ -1200,8 +1215,8 @@
         +     '<button type="button" class="chip play" data-action="play" aria-label="play recording">'
         +       ICON_PLAY + '<span>play</span>'
         +     '</button>'
-        +     '<a class="chip ext" href="' + wikiUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>'
-        +     '<a class="chip ext" href="' + ebirdUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="eBird">ebird</a>'
+        +     '<a class="chip ext" data-ext="wiki" data-sci="' + s.sci + '" href="' + wikiUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="Wikipedia">wiki</a>'
+        +     '<a class="chip ext" data-ext="ebird" href="' + ebirdUrl(s.sci) + '" target="_blank" rel="noopener" aria-label="eBird">ebird</a>'
         +   '</div>'
         + '</article>';
     }).join('');
@@ -1446,7 +1461,7 @@
     var idleTimer = null;
     function overlaysOpen() {
       return !!document.querySelector(
-        '#menu-dd.open, #detail-modal[aria-hidden="false"], #about-modal[aria-hidden="false"]'
+        '#menu-dd.open, #detail-modal[aria-hidden="false"], #about-modal[aria-hidden="false"], #wiki-overlay[aria-hidden="false"]'
       );
     }
     function wakeChrome() {
@@ -2791,9 +2806,39 @@
     }
   });
   document.addEventListener('keydown', function (ev) {
+    // Guarded so a single Escape press while the wiki overlay is reading
+    // on top of the detail modal only closes the overlay, not both layers
+    // at once (both listeners live on document, so both would otherwise
+    // fire for the same keypress regardless of visual stacking).
     if (ev.key === 'Escape' &&
-        document.getElementById('detail-modal').getAttribute('aria-hidden') === 'false') {
+        document.getElementById('detail-modal').getAttribute('aria-hidden') === 'false' &&
+        document.getElementById('wiki-overlay').getAttribute('aria-hidden') !== 'false') {
       if (location.hash) { location.hash = ''; } else { closeDetailModal(); }
+    }
+  });
+
+  // Wikipedia reader overlay: round-mode only (see openWikiOverlay). Not
+  // routed through the hash router - it's a transient reading layer over
+  // whatever the router currently shows, and must not disturb the detail
+  // modal's own hash state underneath it.
+  document.addEventListener('click', function (ev) {
+    if (!document.documentElement.classList.contains('round-mode')) return;
+    var link = ev.target.closest && ev.target.closest('a[data-ext="wiki"]');
+    if (!link) return;
+    ev.preventDefault();
+    var sci = (link.dataset.sci || document.getElementById('modalSci').textContent || '').trim();
+    if (sci) openWikiOverlay(sci);
+  });
+  document.getElementById('wikiBackBtn').addEventListener('click', function () {
+    document.getElementById('wikiFrame').contentWindow.history.back();
+  });
+  document.getElementById('wiki-overlay').addEventListener('click', function (ev) {
+    if (ev.target.dataset && ev.target.dataset.close === '1') closeWikiOverlay();
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape' &&
+        document.getElementById('wiki-overlay').getAttribute('aria-hidden') === 'false') {
+      closeWikiOverlay();
     }
   });
 

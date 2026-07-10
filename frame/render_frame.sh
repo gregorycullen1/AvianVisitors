@@ -24,7 +24,7 @@ SIG="$HOME/BirdSongs/Extracted/frame.sig"
 
 .venv-shoot/bin/python3 shoot.py --url http://localhost \
   --title "Avian Visitors" --subtitle "Just Heard" \
-  --width 480 --height 800 --dsf 1 --collage-vh 66 --small-floor 0.07 \
+  --width 480 --height 800 --dsf 1 --mat 0.0 --collage-vh 72 --small-floor 0.07 \
   --window-hours "$WINDOW_HOURS" \
   --out "$OUT"
 

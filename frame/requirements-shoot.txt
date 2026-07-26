@@ -2,3 +2,7 @@
 # (a Pi 4/5, a laptop, a small server). NOT a Pi Zero W (no ARMv6 browser).
 #   pip install -r requirements-shoot.txt && playwright install chromium
 playwright>=1.40
+# render_frame.sh's sidecar-signature step imports display.py (for
+# fetch_recent/cap_top_n/signature) which needs PIL at module level even
+# though those specific functions don't touch it.
+Pillow>=10,<12

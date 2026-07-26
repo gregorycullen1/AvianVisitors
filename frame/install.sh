@@ -107,16 +107,21 @@ else
   grep -q "^dtoverlay=spi0-0cs" "$CONFIG_TXT" || echo "dtoverlay=spi0-0cs" | sudo tee -a "$CONFIG_TXT" >/dev/null
 fi
 
-echo "2/5  Installing system packages (build tools to compile spidev, libatlas3-base for numpy)..."
+echo "2/5  Installing system packages (build tools to compile spidev, libatlas3-base for numpy, libopenjp2-7 for Pillow)..."
 sudo apt-get update -qq
-sudo apt-get install -y python3-venv python3-dev build-essential libatlas3-base
+sudo apt-get install -y python3-venv python3-dev build-essential libatlas3-base libopenjp2-7
 
 echo "3/5  Creating venv and installing Python deps..."
 python3 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements-frame.txt
 if [ "$PANEL" = epd7in3e ]; then
-  .venv/bin/pip install -q spidev gpiozero
+  # lgpio: gpiozero's default pin factory needs RPi.GPIO or lgpio to drive
+  # real hardware - without either it silently falls back to a NativeFactory
+  # that can toggle pins but fails the panel's actual GPIO calls with
+  # EINVAL. python3-lgpio ships system-wide on current Raspberry Pi OS, but
+  # this venv doesn't inherit system site-packages, so it needs its own copy.
+  .venv/bin/pip install -q spidev gpiozero lgpio
 else
   .venv/bin/pip install -q "inky>=2.1,<3"
 fi

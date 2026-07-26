@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Renders the e-ink frame collage via shoot.py, reading FRAME_WINDOW_HOURS
-# from birdnet.conf so the AvianVisitors admin panel's "frame window"
-# setting can control it without editing this script or its systemd unit.
+# and FRAME_TOP_N from birdnet.conf so the AvianVisitors admin panel's
+# "frame window" setting can control them without editing this script or
+# its systemd unit.
 #
 # Assumes a "shooter" setup: this Pi has a .venv-shoot/ (requirements-shoot.txt)
 # and writes straight into BirdNET-Pi's own Caddy-served webroot, matching
@@ -14,9 +15,12 @@ cd "$(dirname "$0")"
 CONF=/etc/birdnet/birdnet.conf
 [ -f "$CONF" ] || CONF="$HOME/BirdNET-Pi/birdnet.conf"
 WINDOW_HOURS=24
+TOP_N=0
 if [ -f "$CONF" ]; then
   V="$(sed -n 's/^FRAME_WINDOW_HOURS=\(.*\)$/\1/p' "$CONF" | tr -d '"' | head -1)"
   [ -n "$V" ] && WINDOW_HOURS="$V"
+  V="$(sed -n 's/^FRAME_TOP_N=\(.*\)$/\1/p' "$CONF" | tr -d '"' | head -1)"
+  [ -n "$V" ] && TOP_N="$V"
 fi
 
 OUT="$HOME/BirdSongs/Extracted/frame.png"
@@ -25,11 +29,11 @@ SIG="$HOME/BirdSongs/Extracted/frame.sig"
 .venv-shoot/bin/python3 shoot.py --url http://localhost \
   --title "Avian Visitors" --subtitle "Just Heard" \
   --width 480 --height 800 --dsf 1 --mat 0.0 --collage-vh 72 --small-floor 0.07 \
-  --window-hours "$WINDOW_HOURS" \
+  --window-hours "$WINDOW_HOURS" --top-n "$TOP_N" \
   --out "$OUT"
 
-# Sidecar signature: the species signature for the SAME window just
-# rendered with, so a display.py elsewhere can tell "did anything
+# Sidecar signature: the species signature for the SAME window + top-N cap
+# just rendered with, so a display.py elsewhere can tell "did anything
 # meaningfully change" from the underlying data rather than the rendered
 # pixels, which differ render-to-render even for identical data (the site
 # re-rolls small cosmetic randomness - e.g. a bird's perched-vs-flight
@@ -40,5 +44,5 @@ import sys
 sys.path.insert(0, '.')
 import display
 species = display.fetch_recent('http://localhost', $WINDOW_HOURS, 15)
-print(display.signature(species))
+print(display.signature(display.cap_top_n(species, $TOP_N)))
 " > "$SIG"

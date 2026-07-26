@@ -51,6 +51,10 @@ $ALLOWED = [
     // second config file + admin-panel plumbing for one integer.
     'FRAME_WINDOW_HOURS' => ['type' => 'int',    'min' => 1, 'max' => 168,
                               'restart' => ['unit' => 'birdframe-shoot', 'action' => 'start']],
+    // Caps the frame's collage to the N most-active species by call count
+    // within FRAME_WINDOW_HOURS (0 = show all). Same reasoning as above.
+    'FRAME_TOP_N'         => ['type' => 'int',    'min' => 0, 'max' => 20,
+                              'restart' => ['unit' => 'birdframe-shoot', 'action' => 'start']],
 ];
 
 function read_conf(string $path): array {

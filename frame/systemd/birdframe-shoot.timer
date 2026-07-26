@@ -3,7 +3,7 @@ Description=Render the e-ink frame collage on a schedule
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=15min
+OnUnitActiveSec=10min
 Persistent=true
 
 [Install]

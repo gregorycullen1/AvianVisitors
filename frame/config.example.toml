@@ -23,6 +23,9 @@ shoot = true
 # shoot = true         # this Pi renders the collage
 
 hours = 24             # window shown on the frame
+top_n = 0               # cap the collage to the N most-active species by call count (0 = show all);
+                        # a smaller window + a cap (e.g. hours = 3, top_n = 6) keeps birds bigger and
+                        # the roster turning over, instead of one static full-day collage
 
 # --- Titles and look (used when this Pi renders, i.e. shoot = true) ----------
 shoot_title = "Avian Visitors"

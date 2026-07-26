@@ -3,7 +3,7 @@ Description=Update the e-ink bird frame on a schedule
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=15min
+OnUnitActiveSec=10min
 Persistent=true
 
 [Install]

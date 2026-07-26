@@ -63,6 +63,7 @@ DEFAULTS = {
     "bw_days": 7,           # BirdWeather lookback window, in days
     "bw_country": "us",     # geocoder country for the ZIP
     "hours": 24,
+    "top_n": 0,             # cap the collage to the N most-active species by call count (0 = show all)
     "image": "",            # local PNG written by the shooter
     "image_url": "",        # or a published screenshot URL
     "shoot": False,         # or capture inline (needs a browser; the Zero 2 W handles it)
@@ -115,6 +116,15 @@ def fetch_recent(base, hours, timeout, auth=None):
 def signature(species):
     items = sorted((slugify(s["sci"]), _bucket(int(s.get("n") or 1))) for s in species)
     return hashlib.sha256(json.dumps(items).encode()).hexdigest()[:16]
+
+
+def cap_top_n(species, n):
+    """The N most-active species by call count - the same trim shoot.py's
+    API rewrite applies at render time, so a signature computed from this
+    matches what actually got drawn. n <= 0 means no cap."""
+    if not n or len(species) <= n:
+        return species
+    return sorted(species, key=lambda s: s.get("n") or 0, reverse=True)[:n]
 
 
 def fetch_species(cfg, auth=None):
@@ -436,7 +446,7 @@ def obtain_image(cfg, species=None):
         out = os.path.join(os.path.expanduser(cfg["cache"]), "frame.png")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         shoot_birdweather(out, species, title=cfg["shoot_title"], subtitle=cfg["shoot_subtitle"],
-                          timeout_ms=cfg["timeout"] * 1000)
+                          top_n=cfg["top_n"], timeout_ms=cfg["timeout"] * 1000)
         return Image.open(out).convert("RGB")
     if cfg["shoot"]:
         from shoot import shoot
@@ -445,7 +455,8 @@ def obtain_image(cfg, species=None):
         shoot(cfg["base_url"], out, title=cfg["shoot_title"], subtitle=cfg["shoot_subtitle"],
               headline_px=cfg["shoot_headline_px"], eyebrow_px=cfg["shoot_eyebrow_px"],
               lowercase=cfg["shoot_lowercase"], mat=cfg["shoot_mat"],
-              small_floor=cfg["shoot_small_floor"], count_exp=cfg["shoot_count_exp"], timeout_ms=cfg["timeout"] * 1000,
+              small_floor=cfg["shoot_small_floor"], count_exp=cfg["shoot_count_exp"], top_n=cfg["top_n"],
+              timeout_ms=cfg["timeout"] * 1000,
               user=cfg["basic_user"], password=cfg["basic_pass"])
         return Image.open(out).convert("RGB")
     src = cfg["image_url"] or cfg["image"]
@@ -467,7 +478,7 @@ def run(cfg, preview=None, force=False, use_signature=True, mat_box=False):
     if use_signature:
         try:
             species = fetch_species(cfg, _auth(cfg))
-            sig = signature(species)
+            sig = signature(cap_top_n(species, cfg["top_n"]))
         except Exception as e:
             print(f"signature fetch failed: {e}", file=sys.stderr)  # treat as no change
         if is_image_mode(cfg):

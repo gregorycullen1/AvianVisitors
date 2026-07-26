@@ -1645,10 +1645,11 @@ body.av-local #dd-items  { display: block; }
   top: 76px; left: 50%; right: auto; transform: translateX(-50%);
   justify-content: center; gap: 10px; padding: 0;
 }
-.round-mode .top .window-pick { padding: 3px; }
-.round-mode .top .window-pick button { font-size: 8px; padding: 5px 9px; letter-spacing: 0.08em; }
-.round-mode .menu-btn { font-size: 9px; padding: 6px 11px 5px; letter-spacing: 0.12em; }
+.round-mode .top .window-pick { padding: 4px; }
+.round-mode .top .window-pick button { font-size: 15px; padding: 11px 18px; letter-spacing: 0.1em; }
+.round-mode .menu-btn { font-size: 16px; padding: 12px 18px 10px; letter-spacing: 0.14em; }
 .round-mode .slider { bottom: 58px; }
+.round-mode .slider button { font-size: 16px; padding: 17px 32px; }
 .round-mode #menu-dd {
   top: 132px; left: 50%; right: auto;
   width: min(560px, calc(100vw - 160px));
@@ -1723,3 +1724,36 @@ body.av-local #dd-items  { display: block; }
    so the empty space in the bar doesn't block clicks - undo that too
    while idle, so a fully-faded button can't still be tapped. */
 .round-mode body.chrome-idle .top > * { pointer-events: none; }
+
+/* Detail modal: same bezel problem as .top/.slider/.static-head above -
+   the default card sizes itself against the full square viewport
+   (max-height: calc(100vh - 48px)), so a species with a long Wikipedia
+   extract and several recordings grows tall enough that its top/bottom
+   land behind the physical circular bezel. Shrink the safe area and cap
+   the description's own height so the recordings list and wiki chip stay
+   reachable regardless of how long a given species' description runs -
+   only the description scrolls internally instead of pushing everything
+   below it down and off-circle. */
+.round-mode .modal-card {
+  max-width: min(700px, calc(100vw - 140px));
+  max-height: min(640px, calc(100vh - 160px));
+}
+.round-mode .modal-info .desc {
+  max-height: 130px;
+  overflow-y: auto;
+}
+/* This kiosk is touch-driven (no mouse), so the scrollbar track/thumb is
+   just visual noise, not an affordance anyone uses - hide it on every
+   internally-scrolling area (card, description, recordings) while
+   leaving the actual scrolling untouched. */
+.round-mode .modal-card,
+.round-mode .modal-info .desc,
+.round-mode .modal-recordings ol {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.round-mode .modal-card::-webkit-scrollbar,
+.round-mode .modal-info .desc::-webkit-scrollbar,
+.round-mode .modal-recordings ol::-webkit-scrollbar {
+  display: none;
+}

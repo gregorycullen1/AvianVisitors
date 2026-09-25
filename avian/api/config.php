@@ -55,6 +55,14 @@ $ALLOWED = [
     // within FRAME_WINDOW_HOURS (0 = show all). Same reasoning as above.
     'FRAME_TOP_N'         => ['type' => 'int',    'min' => 0, 'max' => 20,
                               'restart' => ['unit' => 'birdframe-shoot', 'action' => 'start']],
+    // Battery badge in the lower-right of frame-e6.png (microcontroller
+    // frames via avian/api/frame.php). Absent = on. Re-renders right away
+    // so the change reaches the panel on its next check.
+    'FRAME_BATTERY_BADGE' => ['type' => 'bool',
+                              'restart' => ['unit' => 'birdframe-shoot', 'action' => 'start']],
+    // Daylight-only checking schedule, pushed to the frame's firmware by
+    // frame.php (X-Config-Payload) - read live per request, so no restart.
+    'FRAME_DAYLIGHT_ONLY' => ['type' => 'bool'],
 ];
 
 function read_conf(string $path): array {
@@ -137,6 +145,7 @@ if ($method === 'GET') {
         $v = $conf[$k];
         if ($spec['type'] === 'float') $v = (float)$v;
         elseif ($spec['type'] === 'int') $v = (int)$v;
+        elseif ($spec['type'] === 'bool') $v = $v === '1';
         $out[$k] = $v;
     }
     echo json_encode([
@@ -168,6 +177,9 @@ if ($method === 'POST') {
         } elseif ($spec['type'] === 'int') {
             $v = (int)$v;
             if ($v < ($spec['min'] ?? -PHP_INT_MAX) || $v > ($spec['max'] ?? PHP_INT_MAX)) { $errors[$k] = 'out of range'; continue; }
+        } elseif ($spec['type'] === 'bool') {
+            if (!in_array($v, [true, false, 0, 1, '0', '1'], true)) { $errors[$k] = 'invalid value'; continue; }
+            $v = $v ? 1 : 0;
         } elseif ($spec['type'] === 'enum') {
             if (!in_array($v, $spec['values'], true)) { $errors[$k] = 'invalid value'; continue; }
         } elseif ($spec['type'] === 'string') {

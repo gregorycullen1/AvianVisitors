@@ -375,6 +375,98 @@ def _snap_near_white(img, threshold=210):
     return img.point(lut * 3)
 
 
+# epd7in3e.getbuffer()'s palette, index-for-index (4 is the panel's unused
+# slot). Pure RGB, which is also esp32-photoframe's "theoretical" palette.
+E6_PALETTE = (0, 0, 0, 255, 255, 255, 255, 255, 0, 255, 0, 0,
+              0, 0, 0, 0, 0, 255, 0, 255, 0)
+
+
+BATTERY_LOW = 20          # at or below: red fill, and frame.php forces a refresh
+# Older reports hide the badge rather than lie. Long enough to span the
+# overnight gap of FRAME_DAYLIGHT_ONLY's schedule (9:30pm-5am).
+BATTERY_MAX_AGE = 12 * 3600
+BADGE_FONTS = ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+               "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf")
+
+
+def read_frame_battery(path, max_age=BATTERY_MAX_AGE, now=None):
+    """Latest battery level a frame reported to frame.php, or None.
+
+    frame.php stores the X-Battery-Percentage header esp32-photoframe sends
+    on every fetch as "<percent> <unix time>". None when there's no report,
+    it's malformed, or it's stale - a frame on USB with no battery never
+    sends the header, and one that stopped polling shouldn't keep showing
+    its last number."""
+    try:
+        with open(path) as f:
+            pct, ts = f.read().split()
+        pct, ts = int(pct), int(ts)
+    except (OSError, ValueError):
+        return None
+    if not 0 <= pct <= 100 or (now or time.time()) - ts > max_age:
+        return None
+    return pct
+
+
+def _draw_battery_badge(img, pct):
+    """Battery glyph + "NN%" in the lower-right corner, in exact palette
+    colours with no anti-aliasing so it survives quantize() crisp."""
+    from PIL import ImageFont
+    font = None
+    for path in BADGE_FONTS:
+        try:
+            font = ImageFont.truetype(path, 13)
+            break
+        except OSError:
+            pass
+    font = font or ImageFont.load_default()
+    black, red = (0, 0, 0), (255, 0, 0)
+    d = ImageDraw.Draw(img)
+    d.fontmode = "1"
+    label = f"{pct}%"
+    tw = round(d.textlength(label, font=font))
+    w, h = img.size
+    bw, bh, margin, gap = 22, 11, 12, 5
+    by1 = h - margin
+    by0 = by1 - bh
+    bx1 = w - margin - tw - gap - 2  # 2px for the nub
+    bx0 = bx1 - bw
+    d.rectangle((bx0, by0, bx1, by1), outline=black)
+    d.rectangle((bx1 + 1, by0 + 3, bx1 + 2, by1 - 3), fill=black)
+    fill_w = round((bw - 4) * pct / 100)
+    if fill_w > 0:
+        d.rectangle((bx0 + 2, by0 + 2, bx0 + 2 + fill_w - 1, by1 - 2),
+                    fill=red if pct <= BATTERY_LOW else black)
+    # Vertically centre the label on the glyph.
+    top, bottom = font.getbbox(label)[1::2]
+    d.text((w - margin - tw, (by0 + by1) / 2 - (top + bottom) / 2), label,
+           fill=black, font=font)
+    return img
+
+
+def e6_panel_image(img, battery=None):
+    """Composed portrait -> 800x480 landscape in exact E6 palette colours,
+    for microcontroller frames fed by avian/api/frame.php. ``battery`` (a
+    percent, or None to omit) adds a badge in the lower-right corner.
+
+    esp32-photoframe skips its own processing (CDR + dither against a
+    measured palette, which speckles flat white: its measured white isn't
+    neutral) only for a native-size PNG whose every pixel is a palette
+    colour. So do what push_panel() does for epd7in3e here instead - snap,
+    then getbuffer()'s quantize - and pre-rotate the way the firmware would
+    for display_orientation=portrait: native(X, Y) = portrait(Y, 799 - X),
+    i.e. 90 deg clockwise. Its 180 deg mount flip is applied at paint time
+    either way, so it isn't baked in here.
+    """
+    pal = Image.new("P", (1, 1))
+    pal.putpalette(E6_PALETTE + (0, 0, 0) * 249)
+    buf = _snap_near_white(img.convert("RGB"))
+    if battery is not None:
+        buf = _draw_battery_badge(buf, battery)
+    buf = buf.transpose(Image.Transpose.ROTATE_270)
+    return buf.quantize(palette=pal).convert("RGB")
+
+
 def push_panel(img, rotate, saturation, panel=""):
     """Push to the panel. Lazy imports so this module still loads on a
     machine without the panel's driver library installed."""

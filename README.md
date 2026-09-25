@@ -104,7 +104,7 @@ Everything outside `avian/`, `frame/`, `kiosk/`, and `wireless-mic/` is upstream
 
 ## Wall frame
 
-An optional e-ink frame mirrors the last 24h of birds onto a panel by your window. Build it from [`frame/`](frame/README.md). It can run off your own BirdNET mic, or standalone from BirdWeather data for any ZIP code with no mic at all.
+An optional e-ink frame mirrors the last 24h of birds onto a panel by your window. Build it from [`frame/`](frame/README.md). It can run off your own BirdNET mic, or standalone from BirdWeather data for any ZIP code with no mic at all. A battery-powered [Waveshare ESP32-S3-PhotoPainter](frame/README.md#esp32-frame-waveshare-esp32-s3-photopainter) can stand in for the frame's Pi, polling the BirdNET-Pi for the rendered collage.
 
 ## Round-panel kiosk
 

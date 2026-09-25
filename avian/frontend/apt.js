@@ -1789,6 +1789,8 @@
               { v: 8,  label: '8' },
               { v: 12, label: '12' },
             ])
+          + settingsToggle('FRAME_BATTERY_BADGE', 'E-ink frame battery badge', 'battery level in the corner of battery-powered frames', v.FRAME_BATTERY_BADGE !== false)
+          + settingsToggle('FRAME_DAYLIGHT_ONLY', 'E-ink frame daylight-only', 'check every 30 min, 5am-9:30pm, instead of every 15 min all night - saves battery', !!v.FRAME_DAYLIGHT_ONLY)
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
           + '  <button type="button" id="saveBtn" disabled>save</button>'
@@ -2473,6 +2475,8 @@
               { v: 8,  label: '8' },
               { v: 12, label: '12' },
             ])
+          + settingsToggle('FRAME_BATTERY_BADGE', 'E-ink frame battery badge', 'battery level in the corner of battery-powered frames', v.FRAME_BATTERY_BADGE !== false)
+          + settingsToggle('FRAME_DAYLIGHT_ONLY', 'E-ink frame daylight-only', 'check every 30 min, 5am-9:30pm, instead of every 15 min all night - saves battery', !!v.FRAME_DAYLIGHT_ONLY)
           + '<div class="menu-save-row">'
           + '  <span class="save-state" id="saveState"></span>'
           + '  <button type="button" id="saveBtn" disabled>save</button>'
